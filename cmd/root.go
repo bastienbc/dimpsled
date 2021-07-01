@@ -23,6 +23,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"regexp"
@@ -42,16 +43,21 @@ and choose a random dim, non aggressive light and color, so that it does not bur
 		// Uncomment the following line if your bare application
 		// has an action associated with it:
 		Run: func(cmd *cobra.Command, args []string) {
-			if red, green, blue, err := findRGBFiles(globalDevice); err != nil {
+			logfile, err := os.OpenFile("/var/log/dimpsled.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+			if err != nil {
 				panic(err)
+			}
+			log.SetOutput(logfile)
+			if red, green, blue, err := findRGBFiles(globalDevice); err != nil {
+				log.Fatal(err)
 			} else {
 				if col, err := generateRGBcolor(palette); err != nil {
-					panic(err)
+					log.Fatal(err)
 				} else {
 					r, g, b := col.RGB255()
-					fmt.Printf("Red (%s): %d\nGreen (%s): %d\nBlue (%s): %d\n", red, r, green, g, blue, b)
+					log.Printf("Red (%s): %d\nGreen (%s): %d\nBlue (%s): %d\n", red, r, green, g, blue, b)
 					if err := setPSLEDColors(red, green, blue, col); err != nil {
-						panic(err)
+						log.Fatal(err)
 					}
 				}
 			}
@@ -80,7 +86,7 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	rand.Seed(time.Now().UTC().UnixNano())
-	rootCmd.Flags().StringVarP(&globalDevice, "device", "d", "", "Any device ending with @global, for wich there is a corresponding @red, @green and @blue")
+	rootCmd.Flags().StringVarP(&globalDevice, "device", "d", "", "Any device for wich there is a corresponding /leds/XXXX:red, /leds/XXXX:green and /leds/XXXX:blue")
 	rootCmd.Flags().StringVarP(&palette, "palette", "p", "pastelle", "Color palette to use (pastelle)")
 }
 
@@ -90,8 +96,9 @@ func findRGBFiles(dev string) (string, string, string, error) {
 	}
 
 	// We need to cut the @global or :global from the given filename
-	subPartParser := regexp.MustCompile(`(^.*[@:])global$`)
-	subPart := subPartParser.FindStringSubmatch(dev)[1]
+	subPartParser := regexp.MustCompile(`^(.*/([[:alnum:]]{4}(?::[[:alnum:]]{4}){2}[.][[:alnum:]]{4}))/input/input[0-9]+/.*$`)
+	subParts := subPartParser.FindStringSubmatch(dev)
+	subPart := fmt.Sprintf("%s/leds/%s:", subParts[1], subParts[2])
 
 	// Now we create red green and blue devicepath
 	format := "%s%s"
